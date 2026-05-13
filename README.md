@@ -99,4 +99,4 @@ This project follows a dual-licensing model:
 - **Source Code (MIT):** All logic, shaders, and UI code are free to use, modify, and distribute.
 - **Assets:** 3D models and branding © 2026 Vector HQ. All assets licensed under project terms.
 
-Developed with ❤️ by [Arturo Paracuellos](https://unboring.net)
+Developed with ❤️ by [Armour007](https://github.com/Armour007)
