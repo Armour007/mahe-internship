@@ -32,6 +32,7 @@ export class AgentSimulation {
         this.triggerAutonomousStrategy();
       } else if (state.phase === 'working') {
         this.processScheduledTasks();
+        this.checkProjectCompletion();
       }
     }, 5000);
 

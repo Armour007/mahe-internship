@@ -37,9 +37,9 @@ export interface AgenticSystem {
 }
 
 export const AGENTIC_SETS: AgenticSystem[] = [
-  {
-    id: 'unboring-net',
-    teamName: 'unboring.net',
+    {
+      id: 'vector-hq-studio',
+      teamName: 'Vector HQ Studio',
     teamType: 'Agency',
     teamDescription: 'A full-service creative agency covering branding, design, development and go-to-market strategy.',
     color: '#4285F4',

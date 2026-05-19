@@ -39,6 +39,12 @@ export interface CharacterState {
 
   // BYOK LLM Configuration
   llmConfig: LLMConfig;
+  openRouterConfig: { apiKey: string; baseUrl?: string };
+  bytezConfig: { apiKey: string; baseUrl?: string };
+  providerPriority: string[];
+  useLocalModel: boolean;
+  economyMode: boolean;
+  maxCompletionWords: number;
 
   setThinking: (isThinking: boolean) => void;
   setIsTyping: (isTyping: boolean) => void;
@@ -49,6 +55,12 @@ export interface CharacterState {
   setHoveredNpc: (index: number | null, pos: { x: number; y: number } | null) => void;
   setHoveredPoi: (id: string | null, label: string | null, pos: { x: number; y: number } | null) => void;
   setLlmConfig: (config: Partial<LLMConfig>) => void;
+  setOpenRouterConfig: (config: Partial<{ apiKey: string; baseUrl?: string }>) => void;
+  setBytezConfig: (config: Partial<{ apiKey: string; baseUrl?: string }>) => void;
+  setProviderPriority: (priority: string[]) => void;
+  setUseLocalModel: (val: boolean) => void;
+  setEconomyMode: (val: boolean) => void;
+  setMaxCompletionWords: (n: number) => void;
   setChatting: (isChatting: boolean) => void;
 }
 

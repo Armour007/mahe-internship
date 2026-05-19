@@ -4,6 +4,17 @@ import { AgentState, CharacterState } from '../../types';
 import { useTeamStore, getActiveAgentSet } from './teamStore';
 import { DEFAULT_MODELS } from '../../core/llm/constants';
 
+const STORAGE_KEY = 'byok-config';
+
+const savedConfig = (() => {
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    return saved ? JSON.parse(saved) : null;
+  } catch {
+    return null;
+  }
+})();
+
 export const useUiStore = create<CharacterState>()(
   (set) => ({
     isThinking: false,
@@ -33,16 +44,10 @@ export const useUiStore = create<CharacterState>()(
     activeAuditTaskId: null,
     setActiveAuditTaskId: (taskId: string | null) => set({ activeAuditTaskId: taskId }),
 
-    llmConfig: (() => {
-      try {
-        const saved = localStorage.getItem('byok-config');
-        if (saved) return JSON.parse(saved);
-      } catch { }
-      return {
-        apiKey: '',
-        model: DEFAULT_MODELS.text
-      };
-    })(),
+    llmConfig: {
+      apiKey: savedConfig?.apiKey || '',
+      model: savedConfig?.model || DEFAULT_MODELS.text,
+    },
 
     setThinking: (isThinking: boolean) => set({ isThinking }),
     setIsTyping: (isTyping: boolean) => set({ isTyping }),
@@ -67,6 +72,33 @@ export const useUiStore = create<CharacterState>()(
       hoveredNpcIndex: null,
     }),
     setLlmConfig: (config) => set((s) => ({ llmConfig: { ...s.llmConfig, ...config } })),
+    useLocalModel: !!savedConfig?.useLocalModel,
+    setUseLocalModel: (val: boolean) => set({ useLocalModel: val }),
+
+    // Economy mode: cap completion length to reduce token usage.
+    economyMode: typeof savedConfig?.economyMode === 'boolean' ? savedConfig.economyMode : true,
+    maxCompletionWords: Number(savedConfig?.maxCompletionWords || 300),
+    setEconomyMode: (val: boolean) => set({ economyMode: val }),
+    setMaxCompletionWords: (n: number) => set({ maxCompletionWords: n }),
+
+    // Provider orchestration / BYOK configs
+    providerPriority: Array.isArray(savedConfig?.providerPriority)
+      ? savedConfig.providerPriority
+      : ['local', 'openrouter', 'bytez', 'gemini'],
+    setProviderPriority: (arr: string[]) => set({ providerPriority: arr }),
+
+    openRouterConfig: {
+      apiKey: savedConfig?.openRouterConfig?.apiKey || '',
+      baseUrl: savedConfig?.openRouterConfig?.baseUrl || 'https://api.openrouter.ai',
+    },
+    setOpenRouterConfig: (cfg: any) => set((s) => ({ openRouterConfig: { ...s.openRouterConfig, ...cfg } })),
+
+    bytezConfig: {
+      apiKey: savedConfig?.bytezConfig?.apiKey || '',
+      baseUrl: savedConfig?.bytezConfig?.baseUrl || 'https://api.bytez.ai',
+    },
+    setBytezConfig: (cfg: any) => set((s) => ({ bytezConfig: { ...s.bytezConfig, ...cfg } })),
+
     setChatting: (isChatting: boolean) => set((s) => ({ 
       isChatting, 
       isTyping: isChatting ? s.isTyping : false,

@@ -211,7 +211,13 @@ export const useCoreStore = create<CoreState>()(
         referenceImages: [],
       }),
 
-      setUserBrief: (brief) => set({ userBrief: brief }),
+      setUserBrief: (brief) => set((state) => ({
+        ...state,
+        userBrief: brief,
+        phase: 'working',
+        finalAssetType: 'text',
+        finalAssetContent: null,
+      })),
       addReferenceImage: (base64) => set((s) => ({ 
         referenceImages: [...s.referenceImages, base64].slice(0, 3) 
       })),
@@ -477,7 +483,33 @@ export const useCoreStore = create<CoreState>()(
     {
       name: 'core-storage',
       storage: createJSONStorage(() => localStorage),
-      partialize: (state) => ({}),
+      version: 1,
+      migrate: (persistedState: any) => ({
+        ...persistedState,
+        debugLog: [],
+        agentHistories: {},
+        agentSummaries: {},
+        boardroomHistories: {},
+      }),
+      partialize: (state) => ({
+        userBrief: state.userBrief,
+        referenceImages: state.referenceImages,
+        phase: state.phase,
+        finalOutput: state.finalOutput,
+        finalAssetType: state.finalAssetType,
+        finalAssetContent: state.finalAssetContent,
+        tasks: state.tasks,
+        actionLog: state.actionLog,
+        isKanbanOpen: state.isKanbanOpen,
+        isLogOpen: state.isLogOpen,
+        isFinalOutputOpen: state.isFinalOutputOpen,
+        logFilterAgentIndex: state.logFilterAgentIndex,
+        viewMode: state.viewMode,
+        totalTokenUsage: state.totalTokenUsage,
+        agentTokenUsage: state.agentTokenUsage,
+        totalEstimatedCost: state.totalEstimatedCost,
+        agentEstimatedCost: state.agentEstimatedCost,
+      }),
     }
   )
 )

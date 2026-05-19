@@ -1,5 +1,9 @@
 import { LLMMessage } from '../llm/types';
 import { GeminiProvider } from '../llm/providers/GeminiProvider';
+import { LocalProvider } from '../llm/providers/LocalProvider';
+import { OpenRouterProvider } from '../llm/providers/OpenRouterProvider';
+import { BytezProvider } from '../llm/providers/BytezProvider';
+import { MockProvider } from '../llm/providers/MockProvider';
 import { useUiStore } from '../../integration/store/uiStore';
 import { useCoreStore } from '../../integration/store/coreStore';
 import { useTeamStore } from '../../integration/store/teamStore';
@@ -25,6 +29,7 @@ export interface ThinkOptions {
 export class AgentBrain {
   private history: LLMMessage[] = [];
   public isThinking: boolean = false;
+  private static readonly MAX_CONTEXT_MESSAGES = 6;
 
   constructor(private readonly host: BrainHost) {
     this.refreshFromStore();
@@ -38,9 +43,34 @@ export class AgentBrain {
       this.refreshFromStore();
       const core = useCoreStore.getState();
       const llmConfig = useUiStore.getState().llmConfig;
-      if (!llmConfig.apiKey) throw new Error('Gemini API key is required');
-      const provider = new GeminiProvider(llmConfig.apiKey);
+      const uiState = useUiStore.getState();
       const model = this.host.data.model || llmConfig.model;
+
+      // Build provider list according to user-configured priority and available keys.
+      const providers: any[] = [];
+      const priority = Array.isArray(uiState.providerPriority) && uiState.providerPriority.length > 0
+        ? uiState.providerPriority
+        : ['local', 'openrouter', 'bytez', 'gemini'];
+
+      for (const p of priority) {
+        if (p === 'local' && uiState.useLocalModel) {
+          providers.push(new LocalProvider());
+        }
+        if (p === 'openrouter' && uiState.openRouterConfig?.apiKey) {
+          providers.push(new OpenRouterProvider(uiState.openRouterConfig.apiKey, uiState.openRouterConfig.baseUrl));
+        }
+        if (p === 'bytez' && uiState.bytezConfig?.apiKey) {
+          providers.push(new BytezProvider(uiState.bytezConfig.apiKey, uiState.bytezConfig.baseUrl));
+        }
+        if (p === 'gemini' && llmConfig.apiKey) {
+          providers.push(new GeminiProvider(llmConfig.apiKey));
+        }
+      }
+
+      if (providers.length === 0) {
+        // No configured real providers: fall back to mock provider to avoid hard failure.
+        providers.push(new MockProvider() as any);
+      }
       const teamId = useTeamStore.getState().selectedAgentSetId;
       const activeTeam = useTeamStore.getState().customSystems.find(s => s.id === teamId)
         || AGENTIC_SETS.find(s => s.id === teamId);
@@ -64,8 +94,8 @@ export class AgentBrain {
         this.syncToStore();
       }
 
-      // 2. Prepare context
-      let messages: LLMMessage[] = this.history.slice(-10);
+        // 2. Prepare context
+        let messages: LLMMessage[] = this.buildCompactContext();
 
       // In chat mode, ensure the latest user message also carries images if it's the brief phase
       if (options.isChat && hasVisionSupport && core.referenceImages.length > 0) {
@@ -90,12 +120,44 @@ export class AgentBrain {
         taskId: this.host.getCurrentTaskId() || undefined
       });
 
-      const response = await provider.generateCompletion(
-        messages,
-        toolDefs,
-        systemPrompt,
-        model
-      );
+      let response;
+      let lastErr: any = null;
+      for (const p of providers) {
+        try {
+          response = await p.generateCompletion(messages, toolDefs, systemPrompt, model);
+          break;
+        } catch (err: any) {
+          lastErr = err;
+          const msg = err?.message || String(err);
+          console.warn(`[AgentBrain] Provider error, trying next: ${msg}`);
+          // continue to next provider on quota or other transient errors
+          continue;
+        }
+      }
+
+      if (!response) {
+        // If all configured providers failed, attempt a final mock completion so UI remains functional.
+        try {
+          const mock = new MockProvider() as any;
+          response = await mock.generateCompletion(messages, toolDefs, systemPrompt, model);
+        } catch (e) {
+          throw lastErr || new Error('All LLM providers failed');
+        }
+      }
+
+      // Apply economy-mode capping if enabled
+      try {
+        const economy = useUiStore.getState().economyMode;
+        const maxWords = useUiStore.getState().maxCompletionWords || 300;
+        if (economy && response?.content) {
+          const words = (response.content as string).split(/\s+/);
+          if (words.length > maxWords) {
+            response.content = words.slice(0, maxWords).join(' ') + '...';
+          }
+        }
+      } catch (e) {
+        // ignore store read errors
+      }
 
       // 4. Log Response
       core.addResponseLog({
@@ -110,14 +172,19 @@ export class AgentBrain {
 
       // 5. Parse Tool Calls
       const text = response.content || '';
-      const toolCalls = response.tool_calls?.map(tc => {
-        try {
-          return { name: tc.function.name, args: JSON.parse(tc.function.arguments) };
-        } catch (e) {
-          console.error('[AgentBrain] Failed to parse tool arguments', tc.function.arguments);
-          return null;
-        }
-      }).filter(Boolean) as any[] || [];
+      const rawToolCalls = response.tool_calls || [];
+      const toolCalls = rawToolCalls
+        .map((tc: any) => {
+          try {
+            const rawArgs = tc?.function?.arguments ?? tc?.args ?? {};
+            const args = typeof rawArgs === 'string' ? JSON.parse(rawArgs) : rawArgs;
+            return { name: tc.function.name, args };
+          } catch (e) {
+            console.error('[AgentBrain] Failed to parse tool arguments', tc?.function?.arguments ?? tc);
+            return null;
+          }
+        })
+        .filter(Boolean) as any[];
 
       // 6. Final Message Construction
       const isInternalTrigger = options.silent;
@@ -168,6 +235,15 @@ export class AgentBrain {
       console.error(`[AgentBrain:${this.host.data.name}] Logic error:`, error);
       const errMsg = error instanceof Error ? error.message : String(error);
       useUiStore.getState().setBYOKOpen(true, errMsg);
+      // Avoid hard-crashing the app loop when providers are not configured yet.
+      if (/No configured LLM providers available/i.test(errMsg)) {
+        try {
+          useCoreStore.getState().setPhase('idle');
+        } catch {
+          // no-op
+        }
+        return { text: '', toolCalls: [] };
+      }
       throw error;
     } finally {
       this.isThinking = false;
@@ -314,5 +390,21 @@ export class AgentBrain {
 
   private syncToStore() {
     useCoreStore.getState().setAgentHistory(this.host.data.index, this.history);
+  }
+
+  private buildCompactContext(): LLMMessage[] {
+    const visibleHistory = this.history.filter((m) => !m.metadata?.internal);
+    const recentVisible = visibleHistory.slice(-AgentBrain.MAX_CONTEXT_MESSAGES);
+    const latestUser = this.history.at(-1);
+
+    // Keep the latest user instruction even when it is internal (silent orchestration).
+    if (latestUser?.role === 'user' && latestUser.metadata?.internal) {
+      const alreadyIncluded = recentVisible.at(-1) === latestUser;
+      if (!alreadyIncluded) {
+        return [...recentVisible, latestUser];
+      }
+    }
+
+    return recentVisible;
   }
 }

@@ -1,5 +1,5 @@
 export const DEFAULT_MODELS = {
-  text: 'gemini-3-flash-preview',
+  text: 'gemini-3.1-flash-lite-preview',
   image: 'gemini-3.1-flash-image-preview',
   music: 'lyria-3-clip-preview',
   video: 'veo-3.1-lite-generate-preview'

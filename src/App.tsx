@@ -8,6 +8,7 @@ import { useCoreStore } from './integration/store/coreStore';
 import { ActionLogPanel } from './interface/ActionLogPanel';
 import { FinalOutputModal } from './interface/FinalOutputModal';
 import Header from './interface/Header';
+import FirstTimeWizard from './interface/FirstTimeWizard';
 import InspectorPanel from './interface/InspectorPanel';
 import { KanbanPanel } from './interface/KanbanPanel';
 import { OutputReviewModal } from './interface/OutputReviewModal';
@@ -22,6 +23,7 @@ const App: React.FC = () => {
   const managerRef = useRef<SceneManager | null>(null);
   const [sceneManager, setSceneManager] = useState<SceneManager | null>(null);
   const { isLogOpen, isKanbanOpen, setIsResizing, viewMode, setViewMode } = useCoreStore();
+  const [showWizard, setShowWizard] = useState(false);
 
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [kanbanHeight, setKanbanHeight] = useState(220);
@@ -47,6 +49,11 @@ const App: React.FC = () => {
   }, []);
 
   useEffect(() => {
+    try {
+      const seen = localStorage.getItem('byok-wizard-seen');
+      const cfg = localStorage.getItem('byok-config');
+      if (!seen && !cfg) setShowWizard(true);
+    } catch {}
     window.addEventListener('mousemove', resize);
     window.addEventListener('mouseup', stopResizing);
     return () => {
@@ -73,16 +80,18 @@ const App: React.FC = () => {
 
   return (
     <SceneContext.Provider value={sceneManager}>
-      <div className="w-screen h-screen bg-white dark:bg-zinc-950 overflow-hidden flex flex-col">
+      <div className="w-screen h-screen bg-white overflow-hidden flex flex-col">
         {/* Top: Header */}
         {!isFullscreen && <Header />}
+
+        {showWizard && <FirstTimeWizard onClose={() => setShowWizard(false)} />}
 
         <div className="flex-1 flex flex-row min-h-0 min-w-0 overflow-hidden">
           {/* Left: Log panel */}
           {isLogOpen && !isFullscreen && viewMode !== 'design' && <ActionLogPanel />}
 
           {/* Center: canvas + kanban drawer stacked */}
-          <div className="relative flex-1 flex flex-col min-w-0 min-h-0 overflow-hidden bg-zinc-50 dark:bg-zinc-900">
+          <div className="relative flex-1 flex flex-col min-w-0 min-h-0 overflow-hidden bg-zinc-50">
 
             {/* Simulation Context - Persistently Mounted */}
             <div
@@ -94,10 +103,10 @@ const App: React.FC = () => {
               {/* Resize Bar */}
               {isKanbanOpen && !isFullscreen && (
                 <div
-                  className={`h-2 hover:h-2 bg-transparent hover:bg-zinc-200 dark:hover:bg-zinc-700 border-t border-black/5 dark:border-white/5 transition-colors cursor-row-resize z-30 flex items-center justify-center group shrink-0 ${useCoreStore.getState().isResizing ? 'bg-zinc-300 dark:bg-zinc-700' : ''}`}
+                  className={`h-2 hover:h-2 bg-transparent hover:bg-zinc-200 border-t border-black/5 transition-colors cursor-row-resize z-30 flex items-center justify-center group shrink-0 ${useCoreStore.getState().isResizing ? 'bg-zinc-300' : ''}`}
                   onMouseDown={startResizing}
                 >
-                  <div className="w-12 h-1 bg-zinc-300 dark:bg-zinc-700 rounded-full group-hover:bg-zinc-400 dark:group-hover:bg-zinc-600" />
+                  <div className="w-12 h-1 bg-zinc-300 rounded-full group-hover:bg-zinc-400" />
                 </div>
               )}
 

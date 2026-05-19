@@ -1,10 +1,11 @@
-import { Info, KeyRound, Maximize2, Settings, Sun, Moon } from 'lucide-react';
-import React, { useState, useEffect } from 'react';
+import { Info, KeyRound, Maximize2, Settings } from 'lucide-react';
+ 
 import packageJson from '../../package.json';
 import { useCoreStore } from '../integration/store/coreStore';
 import { useUiStore } from '../integration/store/uiStore';
 import BYOKModal from './BYOKModal';
 import InfoModal from './InfoModal';
+import React, { useEffect, useState } from 'react';
 
 const version = packageJson.version;
 
@@ -12,31 +13,40 @@ const Header: React.FC = () => {
   const { llmConfig, isBYOKOpen, setBYOKOpen } = useUiStore();
   const { setViewMode } = useCoreStore();
   const [isInfoOpen, setIsInfoOpen] = useState(false);
-  const [isDarkMode, setIsDarkMode] = useState(false);
   const hasKey = !!llmConfig.apiKey;
+  const { openRouterConfig, bytezConfig, useLocalModel } = useUiStore();
+
+  const [health, setHealth] = useState<'missing' | 'configured' | 'unreachable'>('missing');
 
   useEffect(() => {
-    // Check for saved preference or system preference
-    const saved = localStorage.getItem('theme');
-    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-    const shouldBeDark = saved ? saved === 'dark' : prefersDark;
-    setIsDarkMode(shouldBeDark);
-    applyTheme(shouldBeDark);
-  }, []);
+    // compute configured vs missing quickly
+    const anyKey = Boolean(llmConfig?.apiKey || openRouterConfig?.apiKey || bytezConfig?.apiKey || useLocalModel);
+    setHealth(anyKey ? 'configured' : 'missing');
+  }, [llmConfig, openRouterConfig, bytezConfig, useLocalModel]);
 
-  const applyTheme = (dark: boolean) => {
-    if (dark) {
-      document.documentElement.classList.add('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-    }
-    localStorage.setItem('theme', dark ? 'dark' : 'light');
-  };
+  const checkProviders = async () => {
+    const tests = [] as Promise<boolean>[];
+    const tryPing = (url: string) => {
+      return new Promise<boolean>((resolve) => {
+        const controller = new AbortController();
+        const id = setTimeout(() => controller.abort(), 3000);
+        fetch(url, { method: 'HEAD', mode: 'no-cors', signal: controller.signal }).then(() => {
+          clearTimeout(id);
+          resolve(true);
+        }).catch(() => {
+          clearTimeout(id);
+          resolve(false);
+        });
+      });
+    };
 
-  const toggleDarkMode = () => {
-    const newMode = !isDarkMode;
-    setIsDarkMode(newMode);
-    applyTheme(newMode);
+    if (useLocalModel) tests.push(tryPing('http://localhost:8080/generate'));
+    if (openRouterConfig?.baseUrl) tests.push(tryPing(openRouterConfig.baseUrl));
+    if (bytezConfig?.baseUrl) tests.push(tryPing(bytezConfig.baseUrl));
+
+    const results = await Promise.all(tests);
+    const anyReachable = results.some(Boolean);
+    setHealth(anyReachable ? 'configured' : 'unreachable');
   };
 
   const handleFullscreen = () => {
@@ -50,7 +60,7 @@ const Header: React.FC = () => {
   };
 
   return (
-    <header className="h-14 border-b border-zinc-100 dark:border-zinc-800 flex items-center justify-between px-6 bg-white dark:bg-zinc-950 shrink-0 relative z-40">
+    <header className="h-14 border-b border-zinc-100 flex items-center justify-between px-6 bg-white shrink-0 relative z-40">
       {/* Left: Project Title */}
       <div className="flex items-center min-w-0">
         <img
@@ -63,11 +73,11 @@ const Header: React.FC = () => {
           <div className="flex items-center gap-1 shrink-0">
             <button
               onClick={() => setIsInfoOpen(true)}
-              className="text-zinc-300 dark:text-zinc-600 hover:text-zinc-500 dark:hover:text-zinc-400 transition-colors cursor-pointer"
+              className="text-zinc-300 hover:text-zinc-500 transition-colors cursor-pointer"
             >
               <Info size={14} strokeWidth={2} />
             </button>
-            <span className="text-[10px] font-medium text-zinc-400 dark:text-zinc-500 font-mono">v{version}</span>
+            <span className="text-[10px] font-medium text-zinc-400 font-mono">v{version}</span>
           </div>
 
           <div className="flex items-center gap-3 min-w-0">
@@ -75,7 +85,7 @@ const Header: React.FC = () => {
               href="https://github.com/Armour007"
               target="_blank"
               rel="noopener"
-              className="text-[10px] font-medium text-zinc-400 dark:text-zinc-500 hover:text-darkDelegation dark:hover:text-zinc-300 transition-colors truncate"
+              className="text-[10px] font-medium text-zinc-400 hover:text-darkDelegation transition-colors truncate"
             >
               @Armour007
             </a>
@@ -83,7 +93,7 @@ const Header: React.FC = () => {
               href="https://github.com/Armour007/mahe-internship"
               target="_blank"
               rel="noopener"
-              className="text-zinc-300 dark:text-zinc-600 hover:text-darkDelegation dark:hover:text-zinc-300 transition-colors shrink-0"
+              className="text-zinc-300 hover:text-darkDelegation transition-colors shrink-0"
               title="View on GitHub"
             >
               <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"></path></svg>
@@ -97,22 +107,24 @@ const Header: React.FC = () => {
 
         <button
           onClick={() => setViewMode('design')}
-          className="flex items-center gap-2 px-3 py-1 bg-darkDelegation hover:bg-zinc-700 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-white rounded-lg transition-all shadow-lg shadow-black/10 active:scale-95 cursor-pointer h-9 shrink-0 ml-1"
+          className="flex items-center gap-2 px-3 py-1 bg-darkDelegation hover:bg-zinc-700 text-white rounded-lg transition-all shadow-lg shadow-black/10 active:scale-95 cursor-pointer h-9 shrink-0 ml-1"
           title="Manage Teams"
         >
           <Settings size={14} className="group-hover:rotate-45 transition-transform" />
           <span className="text-[10px] font-black uppercase tracking-wider ml-1 hidden sm:inline">Manage Teams</span>
         </button>
 
-        <div className="w-px h-4 bg-zinc-200 dark:bg-zinc-800" />
+        <div className="w-px h-4 bg-zinc-200" />
 
         <div className="flex items-center gap-2">
           <button
-            onClick={toggleDarkMode}
-            className="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 transition-colors p-1"
-            title={isDarkMode ? "Light mode" : "Dark mode"}
+            onClick={() => checkProviders()}
+            title="Provider health — click to run quick check"
+            className={`px-2 py-1 rounded-md text-[11px] font-bold ${health === 'missing' ? 'bg-zinc-100 text-zinc-500' : ''} ${health === 'configured' ? 'bg-emerald-100 text-emerald-700' : ''} ${health === 'unreachable' ? 'bg-amber-100 text-amber-700' : ''}`}
           >
-            {isDarkMode ? <Sun size={16} /> : <Moon size={16} />}
+            {health === 'missing' && 'Provider: Missing'}
+            {health === 'configured' && 'Provider: OK'}
+            {health === 'unreachable' && 'Provider: Unreachable'}
           </button>
           <button
             onClick={handleFullscreen}
@@ -123,10 +135,10 @@ const Header: React.FC = () => {
           </button>
           <button
             onClick={() => setBYOKOpen(true)}
-            className="relative text-zinc-400 dark:text-zinc-600 hover:text-darkDelegation dark:hover:text-zinc-300 transition-colors p-1"
+            className="relative text-zinc-400 hover:text-darkDelegation transition-colors p-1"
             title="API Key (BYOK)"
           >
-            <KeyRound size={16} className={hasKey ? 'text-emerald-500 hover:text-emerald-600 dark:text-emerald-400 dark:hover:text-emerald-300' : ''} />
+            <KeyRound size={16} className={hasKey ? 'text-emerald-500 hover:text-emerald-600' : ''} />
             {hasKey && (
               <span className="absolute top-0.5 right-0.5 w-1.5 h-1.5 rounded-full bg-emerald-400" />
             )}

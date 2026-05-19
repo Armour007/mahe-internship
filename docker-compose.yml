@@ -1,0 +1,43 @@
+version: '3.8'
+services:
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
+    ports:
+      - "8080:8080"
+    volumes:
+      - ~/.ollama:/root/.ollama
+    restart: unless-stopped
+
+  ollama-bootstrap:
+    image: curlimages/curl:8.10.1
+    container_name: ollama-bootstrap
+    depends_on:
+      - ollama
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        until curl -sf http://ollama:8080/api/tags > /dev/null; do
+          echo "Waiting for Ollama...";
+          sleep 2;
+        done;
+        curl -sS http://ollama:8080/api/pull -d '{"name":"qwen2.5:7b-instruct-q4_K_M"}' -H 'Content-Type: application/json' || true
+    restart: "no"
+
+  local-proxy:
+    image: node:18
+    container_name: vhq-local-proxy
+    working_dir: /app
+    volumes:
+      - ./scripts/local-proxy:/app
+    command: ["sh", "-c", "npm install --no-audit --no-fund && node index.js"]
+    ports:
+      - "8090:8090"
+    environment:
+      - ALLOWED_KEYS=demo-key-change-me
+      - LOCAL_LLM_URL=http://ollama:8080
+    depends_on:
+      - ollama
+      - ollama-bootstrap
+    restart: unless-stopped

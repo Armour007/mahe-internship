@@ -1,14 +1,17 @@
-import { Info, RefreshCcw, ScrollText, FileText, Image, Music, Video } from 'lucide-react';
-import React, { useState } from 'react';
+import { Info, RefreshCcw, ScrollText, FileText, Image, Music, Video, Download, Upload } from 'lucide-react';
+import React, { useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 
 import { getAgentSet, getAllAgents } from '../data/agents';
 import { useCoreStore } from '../integration/store/coreStore';
 import { useTeamStore, useActiveTeam } from '../integration/store/teamStore';
+import { useUiStore } from '../integration/store/uiStore';
 import { useSceneManager } from '../simulation/SceneContext';
 import { USER_COLOR } from '../theme/brand';
 import ResetModal from './ResetModal';
 import PricingModal from './PricingModal';
+import VoiceBriefButton from './VoiceBriefButton';
+import ChatBrief from './ChatBrief';
 
 export function formatTokens(num: number): string {
   if (num >= 1000000) {
@@ -25,11 +28,15 @@ const ProjectView: React.FC = () => {
     userBrief,
     referenceImages,
     phase,
+    finalOutput,
+    setFinalOutputOpen,
     actionLog,
     resetProject,
   } = useCoreStore();
+  const { useLocalModel, setUseLocalModel } = useUiStore();
   const [isResetModalOpen, setIsResetModalOpen] = useState(false);
   const [isPricingModalOpen, setIsPricingModalOpen] = useState(false);
+  const backupInputRef = useRef<HTMLInputElement>(null);
   const activeTeam = useActiveTeam();
   const scene = useSceneManager();
 
@@ -41,6 +48,53 @@ const ProjectView: React.FC = () => {
     // 3. Clear project state
     resetProject();
     setIsResetModalOpen(false);
+  };
+
+  const handleExportBackup = () => {
+    const payload = {
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      data: {
+        core: localStorage.getItem('core-storage'),
+        team: localStorage.getItem('team-storage'),
+        byok: localStorage.getItem('byok-config'),
+      },
+    };
+
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `vector-hq-backup-${Date.now()}.json`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleImportBackup = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const text = await file.text();
+      const parsed = JSON.parse(text);
+      const backupData = parsed?.data;
+
+      if (!backupData || typeof backupData !== 'object') {
+        throw new Error('Invalid backup file format.');
+      }
+
+      if (typeof backupData.core === 'string') localStorage.setItem('core-storage', backupData.core);
+      if (typeof backupData.team === 'string') localStorage.setItem('team-storage', backupData.team);
+      if (typeof backupData.byok === 'string') localStorage.setItem('byok-config', backupData.byok);
+
+      // Reload to rehydrate all stores from the imported snapshot.
+      window.location.reload();
+    } catch (error) {
+      console.error('Failed to import backup', error);
+      alert('Backup import failed. Please use a valid Vector HQ backup file.');
+    } finally {
+      event.target.value = '';
+    }
   };
 
   return (
@@ -64,6 +118,18 @@ const ProjectView: React.FC = () => {
         </div>
       </div>
 
+      {phase === 'done' && finalOutput && (
+        <div className="mb-8 w-full">
+          <button
+            onClick={() => setFinalOutputOpen(true)}
+            className="w-full flex items-center justify-center gap-2 px-4 py-4 rounded-2xl bg-darkDelegation hover:bg-black text-white shadow-xl shadow-darkDelegation/10 transition-all active:scale-[0.98]"
+          >
+            <FileText size={14} strokeWidth={3} />
+            <span className="text-[10px] font-black uppercase tracking-widest">View Final Output</span>
+          </button>
+        </div>
+      )}
+
       <div className="h-px bg-zinc-100 w-full mb-6" />
 
       {/* Reset Project Button */}
@@ -82,6 +148,46 @@ const ProjectView: React.FC = () => {
         </div>
       )}
 
+      <div className="mb-8 w-full grid grid-cols-2 gap-2">
+        <button
+          onClick={handleExportBackup}
+          className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-2xl bg-zinc-50 hover:bg-zinc-100 border border-zinc-200 text-zinc-600 transition-all active:scale-[0.98]"
+        >
+          <Download size={14} strokeWidth={3} />
+          <span className="text-[10px] font-black uppercase tracking-widest">Export Backup</span>
+        </button>
+        <button
+          onClick={() => backupInputRef.current?.click()}
+          className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-2xl bg-zinc-50 hover:bg-zinc-100 border border-zinc-200 text-zinc-600 transition-all active:scale-[0.98]"
+        >
+          <Upload size={14} strokeWidth={3} />
+          <span className="text-[10px] font-black uppercase tracking-widest">Import Backup</span>
+        </button>
+        <input
+          ref={backupInputRef}
+          type="file"
+          accept="application/json"
+          className="hidden"
+          onChange={handleImportBackup}
+        />
+      </div>
+
+      <div className="mb-8 w-full">
+        <button
+          onClick={() => setUseLocalModel(!useLocalModel)}
+          className="w-full flex items-center justify-center gap-3 px-4 py-3 rounded-2xl bg-zinc-50 hover:bg-zinc-100 border border-zinc-200 text-zinc-600 transition-all active:scale-[0.98]"
+        >
+          <input
+            type="checkbox"
+            checked={useLocalModel}
+            onChange={() => setUseLocalModel(!useLocalModel)}
+            className="w-4 h-4 rounded border-zinc-300 cursor-pointer"
+            onClick={(e) => e.stopPropagation()}
+          />
+          <span className="text-[10px] font-black uppercase tracking-widest">Prefer Local Model</span>
+        </button>
+      </div>
+
       {/* Brief */}
       <div className="mb-10">
         <div className="flex items-center gap-2 mb-4">
@@ -90,7 +196,7 @@ const ProjectView: React.FC = () => {
         </div>
         {userBrief ? (
           <div className="space-y-4">
-            <div className="markdown-content text-xs text-zinc-600 leading-relaxed font-medium bg-white/40 p-4 rounded-xl border border-zinc-100/50 max-h-[300px] overflow-y-auto custom-scrollbar">
+            <div className="markdown-content text-xs text-zinc-600 leading-relaxed font-medium bg-white/40 p-4 rounded-xl border border-zinc-100/50 max-h-75 overflow-y-auto custom-scrollbar">
               <ReactMarkdown>
                 {userBrief}
               </ReactMarkdown>
@@ -110,7 +216,13 @@ const ProjectView: React.FC = () => {
             )}
           </div>
         ) : (
-          <p className="text-xs text-zinc-400 italic">No active brief. Talk to the Lead Agent to define your project.</p>
+            <div className="flex flex-col gap-3">
+              <div className="grid grid-cols-1 gap-3">
+                <VoiceBriefButton />
+                <ChatBrief />
+              </div>
+              <p className="text-xs text-zinc-400 italic">Use voice or chat to create your project brief.</p>
+            </div>
         )}
       </div>
 
